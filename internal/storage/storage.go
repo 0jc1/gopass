@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-
 	"gopass/internal/models"
 )
 

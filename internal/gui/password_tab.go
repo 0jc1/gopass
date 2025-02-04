@@ -4,25 +4,28 @@ import (
 	"fmt"
 	"time"
 
+	"gopass/internal/models"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/google/uuid"
-	"gopass/internal/models"
 )
 
 type PasswordTab struct {
-	window   fyne.Window
-	mainApp  *MainApp
-	table    *widget.Table
-	passwords []models.Password
+	window      fyne.Window
+	mainApp     *MainApp
+	table       *widget.Table
+	passwords   []models.Password
+	selectedRow int
 }
 
 func NewPasswordTab(window fyne.Window, mainApp *MainApp) *PasswordTab {
 	return &PasswordTab{
-		window:  window,
-		mainApp: mainApp,
+		window:      window,
+		mainApp:     mainApp,
+		selectedRow: -1,
 	}
 }
 
@@ -61,6 +64,11 @@ func (p *PasswordTab) createContent() fyne.CanvasObject {
 		},
 	)
 
+	// Set up table selection
+	p.table.OnSelected = func(id widget.TableCellID) {
+		p.selectedRow = id.Row
+	}
+
 	// Add button
 	addBtn := widget.NewButton("Add Password", func() {
 		p.showPasswordDialog(nil)
@@ -71,12 +79,11 @@ func (p *PasswordTab) createContent() fyne.CanvasObject {
 		if len(p.passwords) == 0 {
 			return
 		}
-		selected := p.table.SelectedCell()
-		if selected.Row < 0 {
+		if p.selectedRow < 0 {
 			dialog.ShowInformation("Select Entry", "Please select a password entry to edit", p.window)
 			return
 		}
-		p.showPasswordDialog(&p.passwords[selected.Row])
+		p.showPasswordDialog(&p.passwords[p.selectedRow])
 	})
 
 	// Delete button
@@ -84,20 +91,22 @@ func (p *PasswordTab) createContent() fyne.CanvasObject {
 		if len(p.passwords) == 0 {
 			return
 		}
-		selected := p.table.SelectedCell()
-		if selected.Row < 0 {
+		if p.selectedRow < 0 {
 			dialog.ShowInformation("Select Entry", "Please select a password entry to delete", p.window)
 			return
 		}
 		dialog.ShowConfirm("Delete Password", "Are you sure you want to delete this password?",
 			func(ok bool) {
 				if ok {
-					err := p.mainApp.storage.DeletePassword(p.passwords[selected.Row].ID)
+					err := p.mainApp.storage.DeletePassword(p.passwords[p.selectedRow].ID)
 					if err != nil {
 						dialog.ShowError(err, p.window)
 						return
 					}
+					// Reset selection and refresh table
+					p.selectedRow = -1
 					p.passwords = p.mainApp.storage.GetPasswords()
+					p.table.UnselectAll()
 					p.table.Refresh()
 					p.mainApp.logOutput("Password deleted successfully")
 				}
@@ -109,12 +118,11 @@ func (p *PasswordTab) createContent() fyne.CanvasObject {
 		if len(p.passwords) == 0 {
 			return
 		}
-		selected := p.table.SelectedCell()
-		if selected.Row < 0 {
+		if p.selectedRow < 0 {
 			dialog.ShowInformation("Select Entry", "Please select a password entry to view", p.window)
 			return
 		}
-		pass := p.passwords[selected.Row]
+		pass := p.passwords[p.selectedRow]
 		content := widget.NewTextGrid()
 		content.SetText(fmt.Sprintf("Name: %s\nURL: %s\nUsername: %s\nPassword: %s\nNote: %s",
 			pass.Name, pass.URL, pass.Username, pass.Password, pass.Note))
@@ -160,7 +168,14 @@ func (p *PasswordTab) showPasswordDialog(password *models.Password) {
 		{Text: "Note", Widget: noteEntry},
 	}
 
-	dialog.ShowForm(isNew?"Add Password":"Edit Password", "Save", "Cancel", items,
+	var formTxt string
+	if isNew {
+		formTxt = "Add Password"
+	} else {
+		formTxt = "Edit Password"
+	}
+
+	dialog.ShowForm(formTxt, "Save", "Cancel", items,
 		func(ok bool) {
 			if !ok {
 				return
@@ -185,8 +200,20 @@ func (p *PasswordTab) showPasswordDialog(password *models.Password) {
 				return
 			}
 
-			p.passwords = p.mainApp.storage.GetPasswords()
-			p.table.Refresh()
-			p.mainApp.logOutput(fmt.Sprintf("Password %s successfully", isNew?"added":"updated"))
+			// Use goroutine to refresh UI after dialog closes
+			go func() {
+				// Reset selection and refresh table
+				p.selectedRow = -1
+				p.passwords = p.mainApp.storage.GetPasswords()
+				p.table.UnselectAll()
+				p.table.Refresh()
+
+				// Log the operation
+				action := "added"
+				if !isNew {
+					action = "updated"
+				}
+				p.mainApp.logOutput(fmt.Sprintf("Password %s successfully", action))
+			}()
 		}, p.window)
 }

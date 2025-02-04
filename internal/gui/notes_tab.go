@@ -13,16 +13,18 @@ import (
 )
 
 type NotesTab struct {
-	window  fyne.Window
-	mainApp *MainApp
-	table   *widget.Table
-	notes   []models.Note
+	window      fyne.Window
+	mainApp     *MainApp
+	table       *widget.Table
+	notes       []models.Note
+	selectedRow int
 }
 
 func NewNotesTab(window fyne.Window, mainApp *MainApp) *NotesTab {
 	return &NotesTab{
-		window:  window,
-		mainApp: mainApp,
+		window:      window,
+		mainApp:     mainApp,
+		selectedRow: -1,
 	}
 }
 
@@ -61,6 +63,11 @@ func (n *NotesTab) createContent() fyne.CanvasObject {
 			}
 		},
 	)
+	
+	// Set up table selection
+	n.table.OnSelected = func(id widget.TableCellID) {
+		n.selectedRow = id.Row
+	}
 
 	// Add button
 	addBtn := widget.NewButton("Add Note", func() {
@@ -72,12 +79,11 @@ func (n *NotesTab) createContent() fyne.CanvasObject {
 		if len(n.notes) == 0 {
 			return
 		}
-		selected := n.table.SelectedCell()
-		if selected.Row < 0 {
+		if n.selectedRow < 0 {
 			dialog.ShowInformation("Select Entry", "Please select a note to edit", n.window)
 			return
 		}
-		n.showNoteDialog(&n.notes[selected.Row])
+		n.showNoteDialog(&n.notes[n.selectedRow])
 	})
 
 	// Delete button
@@ -85,20 +91,22 @@ func (n *NotesTab) createContent() fyne.CanvasObject {
 		if len(n.notes) == 0 {
 			return
 		}
-		selected := n.table.SelectedCell()
-		if selected.Row < 0 {
+		if n.selectedRow < 0 {
 			dialog.ShowInformation("Select Entry", "Please select a note to delete", n.window)
 			return
 		}
 		dialog.ShowConfirm("Delete Note", "Are you sure you want to delete this note?",
 			func(ok bool) {
 				if ok {
-					err := n.mainApp.storage.DeleteNote(n.notes[selected.Row].ID)
+					err := n.mainApp.storage.DeleteNote(n.notes[n.selectedRow].ID)
 					if err != nil {
 						dialog.ShowError(err, n.window)
 						return
 					}
+					// Reset selection and refresh table
+					n.selectedRow = -1
 					n.notes = n.mainApp.storage.GetNotes()
+					n.table.UnselectAll()
 					n.table.Refresh()
 					n.mainApp.logOutput("Note deleted successfully")
 				}
@@ -110,12 +118,11 @@ func (n *NotesTab) createContent() fyne.CanvasObject {
 		if len(n.notes) == 0 {
 			return
 		}
-		selected := n.table.SelectedCell()
-		if selected.Row < 0 {
+		if n.selectedRow < 0 {
 			dialog.ShowInformation("Select Entry", "Please select a note to view", n.window)
 			return
 		}
-		note := n.notes[selected.Row]
+		note := n.notes[n.selectedRow]
 		content := widget.NewTextGrid()
 		content.SetText(fmt.Sprintf("Title: %s\n\n%s", note.Title, note.Content))
 		dialog.ShowCustom("Note Details", "Close", content, n.window)
@@ -151,7 +158,14 @@ func (n *NotesTab) showNoteDialog(note *models.Note) {
 		{Text: "Content", Widget: contentEntry},
 	}
 
-	dialog.ShowForm(isNew?"Add Note":"Edit Note", "Save", "Cancel", items,
+	var formTxt string
+	if isNew {
+		formTxt = "Add Note"
+	} else {
+		formTxt = "Edit Note"
+	}
+
+	d := dialog.NewForm(formTxt, "Save", "Cancel", items,
 		func(ok bool) {
 			if !ok {
 				return
@@ -173,8 +187,21 @@ func (n *NotesTab) showNoteDialog(note *models.Note) {
 				return
 			}
 
-			n.notes = n.mainApp.storage.GetNotes()
-			n.table.Refresh()
-			n.mainApp.logOutput(fmt.Sprintf("Note %s successfully", isNew?"added":"updated"))
+			// Use goroutine to refresh UI after dialog closes
+			go func() {
+				// Reset selection and refresh table
+				n.selectedRow = -1
+				n.notes = n.mainApp.storage.GetNotes()
+				n.table.UnselectAll()
+				n.table.Refresh()
+
+				// Log the operation
+				action := "added"
+				if !isNew {
+					action = "updated"
+				}
+				n.mainApp.logOutput(fmt.Sprintf("Note %s successfully", action))
+			}()
 		}, n.window)
+	d.Show()
 }

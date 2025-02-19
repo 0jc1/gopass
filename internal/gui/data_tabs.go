@@ -39,19 +39,25 @@ func (d *DataTabs) createExportTab() fyne.CanvasObject {
 			}
 			defer writer.Close()
 
-			data, err := d.mainApp.storage.Export()
-			if err != nil {
-				dialog.ShowError(err, d.window)
-				return
-			}
+			// Handle export in goroutine
+			go func() {
+				data, err := d.mainApp.storage.Export()
+				if err != nil {
+					d.window.Canvas().Refresh(d.window.Content())
+					dialog.ShowError(err, d.window)
+					return
+				}
 
-			_, err = writer.Write(data)
-			if err != nil {
-				dialog.ShowError(err, d.window)
-				return
-			}
+				_, err = writer.Write(data)
+				if err != nil {
+					d.window.Canvas().Refresh(d.window.Content())
+					dialog.ShowError(err, d.window)
+					return
+				}
 
-			d.mainApp.logOutput(fmt.Sprintf("Data exported successfully to %s", writer.URI().Path()))
+				d.window.Canvas().Refresh(d.window.Content())
+				d.mainApp.logOutput(fmt.Sprintf("Data exported successfully to %s", writer.URI().Path()))
+			}()
 		}, d.window)
 	})
 
@@ -76,19 +82,25 @@ func (d *DataTabs) createImportTab() fyne.CanvasObject {
 			}
 			defer reader.Close()
 
-			data, err := os.ReadFile(reader.URI().Path())
-			if err != nil {
-				dialog.ShowError(err, d.window)
-				return
-			}
+			// Handle import in goroutine
+			go func() {
+				data, err := os.ReadFile(reader.URI().Path())
+				if err != nil {
+					d.window.Canvas().Refresh(d.window.Content())
+					dialog.ShowError(err, d.window)
+					return
+				}
 
-			err = d.mainApp.storage.Import(data)
-			if err != nil {
-				dialog.ShowError(err, d.window)
-				return
-			}
+				err = d.mainApp.storage.Import(data)
+				if err != nil {
+					d.window.Canvas().Refresh(d.window.Content())
+					dialog.ShowError(err, d.window)
+					return
+				}
 
-			d.mainApp.logOutput(fmt.Sprintf("Data imported successfully from %s", filepath.Base(reader.URI().Path())))
+				d.window.Canvas().Refresh(d.window.Content())
+				d.mainApp.logOutput(fmt.Sprintf("Data imported successfully from %s", filepath.Base(reader.URI().Path())))
+			}()
 		}, d.window)
 
 		fd.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))

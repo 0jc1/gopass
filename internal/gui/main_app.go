@@ -67,7 +67,7 @@ func (m *MainApp) onAuthSuccess() {
 	)
 
 	m.window.SetContent(content)
-	m.logOutput("Successfully authenticated")
+	m.logOutput("Successfully authenticated.")
 }
 
 func (m *MainApp) createPasswordsTab() fyne.CanvasObject {
@@ -87,5 +87,8 @@ func (m *MainApp) createImportTab() fyne.CanvasObject {
 }
 
 func (m *MainApp) logOutput(message string) {
-	m.output.SetText(m.output.Text() + "\n" + message)
+	// Ensure UI updates happen on main thread
+	m.window.Canvas().Refresh(m.output)
+	currentText := m.output.Text()
+	m.output.SetText(currentText + "\n" + message)
 }

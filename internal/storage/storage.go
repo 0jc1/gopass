@@ -71,14 +71,18 @@ func (s *Storage) decrypt(data []byte) ([]byte, error) {
 }
 
 func (s *Storage) Save() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// First get a copy of the data under lock
+	var data models.ExportData
+	func() {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		data = models.ExportData{
+			Passwords: append([]models.Password{}, s.passwords...),
+			Notes:     append([]models.Note{}, s.notes...),
+		}
+	}()
 
-	data := models.ExportData{
-		Passwords: s.passwords,
-		Notes:     s.notes,
-	}
-
+	// Then do the expensive operations without holding the lock
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -99,9 +103,7 @@ func (s *Storage) Save() error {
 }
 
 func (s *Storage) Load() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// First do all the expensive I/O operations without holding the lock
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
@@ -126,6 +128,9 @@ func (s *Storage) Load() error {
 		return err
 	}
 
+	// Only lock when updating the in-memory state
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.passwords = data.Passwords
 	s.notes = data.Notes
 	return nil
@@ -133,37 +138,63 @@ func (s *Storage) Load() error {
 
 // Password operations
 func (s *Storage) AddPassword(p models.Password) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.passwords = append(s.passwords, p)
+	// First update memory
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.passwords = append(s.passwords, p)
+	}()
+	
+	// Then save to disk
 	return s.Save()
 }
 
 func (s *Storage) UpdatePassword(p models.Password) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, existing := range s.passwords {
-		if existing.ID == p.ID {
-			s.passwords[i] = p
-			return s.Save()
+	var found bool
+	
+	// First update memory
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, existing := range s.passwords {
+			if existing.ID == p.ID {
+				s.passwords[i] = p
+				found = true
+				break
+			}
 		}
+	}()
+	
+	if !found {
+		return errors.New("password not found")
 	}
-	return errors.New("password not found")
+	
+	// Then save to disk
+	return s.Save()
 }
 
 func (s *Storage) DeletePassword(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, p := range s.passwords {
-		if p.ID == id {
-			s.passwords = append(s.passwords[:i], s.passwords[i+1:]...)
-			return s.Save()
+	var found bool
+	
+	// First update memory
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, p := range s.passwords {
+			if p.ID == id {
+				s.passwords = append(s.passwords[:i], s.passwords[i+1:]...)
+				found = true
+				break
+			}
 		}
+	}()
+	
+	if !found {
+		return errors.New("password not found")
 	}
-	return errors.New("password not found")
+	
+	// Then save to disk
+	return s.Save()
 }
 
 func (s *Storage) GetPasswords() []models.Password {
@@ -174,37 +205,63 @@ func (s *Storage) GetPasswords() []models.Password {
 
 // Note operations
 func (s *Storage) AddNote(n models.Note) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.notes = append(s.notes, n)
+	// First update memory
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.notes = append(s.notes, n)
+	}()
+	
+	// Then save to disk
 	return s.Save()
 }
 
 func (s *Storage) UpdateNote(n models.Note) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, existing := range s.notes {
-		if existing.ID == n.ID {
-			s.notes[i] = n
-			return s.Save()
+	var found bool
+	
+	// First update memory
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, existing := range s.notes {
+			if existing.ID == n.ID {
+				s.notes[i] = n
+				found = true
+				break
+			}
 		}
+	}()
+	
+	if !found {
+		return errors.New("note not found")
 	}
-	return errors.New("note not found")
+	
+	// Then save to disk
+	return s.Save()
 }
 
 func (s *Storage) DeleteNote(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, n := range s.notes {
-		if n.ID == id {
-			s.notes = append(s.notes[:i], s.notes[i+1:]...)
-			return s.Save()
+	var found bool
+	
+	// First update memory
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, n := range s.notes {
+			if n.ID == id {
+				s.notes = append(s.notes[:i], s.notes[i+1:]...)
+				found = true
+				break
+			}
 		}
+	}()
+	
+	if !found {
+		return errors.New("note not found")
 	}
-	return errors.New("note not found")
+	
+	// Then save to disk
+	return s.Save()
 }
 
 func (s *Storage) GetNotes() []models.Note {

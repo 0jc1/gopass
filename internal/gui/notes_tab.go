@@ -187,19 +187,27 @@ func (n *NotesTab) showNoteDialog(note *models.Note) {
 				return
 			}
 
-			// Use goroutine to refresh UI after dialog closes
+			// Do storage operations in goroutine
 			go func() {
-				// Reset selection and refresh table
-				n.selectedRow = -1
-				n.notes = n.mainApp.storage.GetNotes()
-				n.table.UnselectAll()
-				n.table.Refresh()
-
 				// Log the operation
 				action := "added"
 				if !isNew {
 					action = "updated"
 				}
+				
+				// Get updated notes in background
+				updatedNotes := n.mainApp.storage.GetNotes()
+				
+				// Update UI state
+				n.selectedRow = -1
+				n.notes = updatedNotes
+				
+				// Ensure table refresh happens on main thread
+				if canvas := fyne.CurrentApp().Driver().CanvasForObject(n.table); canvas != nil {
+					canvas.Refresh(n.table)
+				}
+				
+				// Log output (already handles main thread updates)
 				n.mainApp.logOutput(fmt.Sprintf("Note %s successfully", action))
 			}()
 		}, n.window)

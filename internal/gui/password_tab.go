@@ -200,20 +200,28 @@ func (p *PasswordTab) showPasswordDialog(password *models.Password) {
 				return
 			}
 
-			// Use goroutine to refresh UI after dialog closes
+			// Do storage operations in goroutine
 			go func() {
-				// Reset selection and refresh table
-				p.selectedRow = -1
-				p.passwords = p.mainApp.storage.GetPasswords()
-				p.table.UnselectAll()
-				p.table.Refresh()
-
 				// Log the operation
 				action := "added"
 				if !isNew {
 					action = "updated"
 				}
-				p.mainApp.logOutput(fmt.Sprintf("Password %s successfully", action))
+				
+				// Get updated passwords in background
+				updatedPasswords := p.mainApp.storage.GetPasswords()
+				
+				// Update UI state
+				p.selectedRow = -1
+				p.passwords = updatedPasswords
+				
+				// Ensure table refresh happens on main thread
+				if canvas := fyne.CurrentApp().Driver().CanvasForObject(p.table); canvas != nil {
+					canvas.Refresh(p.table)
+				}
+				
+				// Log output (already handles main thread updates)
+				p.mainApp.logOutput(fmt.Sprintf("Password %s successfully.", action))
 			}()
 		}, p.window)
 }
